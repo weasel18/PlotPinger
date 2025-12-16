@@ -45,7 +45,7 @@ ipcMain.handle('ping', async (event, host) => {
     const startTime = process.hrtime.bigint();
 
     const result = await ping.promise.probe(host, {
-      timeout: 1,
+      timeout: 5, // Increased from 1 to 5 seconds for VPN connections
       extra: ['-n', '1'] // Windows: -n 1, Linux: -c 1
     });
 
@@ -76,11 +76,23 @@ ipcMain.handle('traceroute', async (event, host) => {
   return new Promise((resolve) => {
     const isWindows = process.platform === 'win32';
     const command = isWindows ? 'tracert' : 'traceroute';
-    const args = isWindows ? ['-d', '-h', '30', '-w', '1000', host] : ['-n', '-m', '30', '-w', '1', host];
+    // Increased timeouts: Windows -w 5000ms (5s), Linux -w 5 (5s) for VPN connections
+    const args = isWindows ? ['-d', '-h', '30', '-w', '5000', host] : ['-n', '-m', '30', '-w', '5', host];
 
     const tracerouteProcess = spawn(command, args);
 
     let output = '';
+    let hasResolved = false;
+
+    // Overall timeout - 3 minutes max (30 hops × 5 seconds + buffer)
+    const overallTimeout = setTimeout(() => {
+      if (!hasResolved) {
+        console.log('Traceroute timed out after 3 minutes');
+        hasResolved = true;
+        tracerouteProcess.kill();
+        resolve({ success: false, error: 'Timeout after 3 minutes', output, host });
+      }
+    }, 180000);
 
     tracerouteProcess.stdout.on('data', (data) => {
       output += data.toString();
@@ -93,14 +105,22 @@ ipcMain.handle('traceroute', async (event, host) => {
     });
 
     tracerouteProcess.on('close', (code) => {
-      console.log('Traceroute completed with code:', code);
-      console.log('Traceroute output:', output.substring(0, 500));
-      resolve({ success: code === 0, output, host });
+      if (!hasResolved) {
+        clearTimeout(overallTimeout);
+        hasResolved = true;
+        console.log('Traceroute completed with code:', code);
+        console.log('Traceroute output:', output.substring(0, 500));
+        resolve({ success: code === 0, output, host });
+      }
     });
 
     tracerouteProcess.on('error', (err) => {
-      console.error('Traceroute error:', err);
-      resolve({ success: false, error: err.message, host });
+      if (!hasResolved) {
+        clearTimeout(overallTimeout);
+        hasResolved = true;
+        console.error('Traceroute error:', err);
+        resolve({ success: false, error: err.message, host });
+      }
     });
   });
 });
