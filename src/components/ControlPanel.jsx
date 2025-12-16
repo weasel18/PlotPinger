@@ -11,7 +11,7 @@ function ControlPanel({ tab, onUpdateTab, history, onAddToHistory }) {
       setDestination(tab.destination || '');
       setIsRunning(!!tab.data?.isRunning);
     }
-  }, [tab]);
+  }, [tab?.id, tab?.destination, tab?.data?.isRunning]);
 
   const handleStart = async () => {
     if (!destination.trim()) return;

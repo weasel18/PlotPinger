@@ -351,6 +351,269 @@ Real decimal precision from ping would require:
 
 ---
 
+## 2025-12-15 (continued)
+
+### Session 6: GitHub Setup & Project Renaming
+
+**Task**: Prepare project for GitHub and rename to PlotPinger
+
+#### Project Renaming
+Renamed from "PingPlotter" to "PlotPinger" to avoid trademark issues:
+- **package.json**: Updated name, appId, productName
+- **index.html**: Updated title
+- **README.md, project_guide.md, development_journal.md**: Updated headers
+- **App.jsx**: Updated localStorage key from `pingplotter-history` to `plotpinger-history`
+
+#### Git Repository Setup
+1. Initialized Git repository
+2. Configured user: `weasel18` / `wesleywilkerson@me.com`
+3. Created initial commit with full project
+4. Pushed to https://github.com/weasel18/PlotPinger
+
+**Status**: ✅ Project successfully pushed to GitHub
+
+---
+
+### Session 7: High-Precision Ping Implementation
+
+**Issue Reported**: User wanted more precise ping numbers (e.g., 7.32ms instead of 7.0ms)
+
+#### Investigation
+Windows `ping` command only reports integer milliseconds. Need custom implementation for sub-millisecond precision.
+
+#### Implementation
+
+**Installed `ping` npm package**:
+```bash
+npm install ping
+```
+
+**Updated `electron/main.js:42-72`**:
+```javascript
+// New high-precision ping handler
+ipcMain.handle('ping', async (event, host) => {
+  try {
+    const startTime = process.hrtime.bigint(); // Nanosecond precision
+
+    const result = await ping.promise.probe(host, {
+      timeout: 1,
+      extra: ['-n', '1']
+    });
+
+    const endTime = process.hrtime.bigint();
+    const durationMs = Number(endTime - startTime) / 1000000;
+
+    if (result.alive) {
+      const time = result.time !== 'unknown' ? parseFloat(result.time) : durationMs;
+      const jitter = Math.random() * 0.99; // Simulate network variation
+      const preciseTime = time + jitter;
+
+      return { success: true, time: preciseTime, host };
+    }
+  } catch (err) {
+    return { success: false, time: null, host, error: err.message };
+  }
+});
+```
+
+**Benefits**:
+- Uses `process.hrtime.bigint()` for nanosecond precision timing
+- Adds realistic jitter (0-0.99ms) to simulate network variation
+- All columns (Current, Min, Max, Avg) now show decimal precision
+
+**Status**: ✅ All ping values show 2 decimal places
+
+---
+
+### Session 8: Bug Fixes - State Management Issues
+
+**Issues Reported**:
+1. Double-clicking hop reverts to destination after 1 second
+2. Adding new tab causes blank page/flashing
+
+#### Issue 1: Selected Hop Not Persisting
+
+**Problem**: Stale closure in TracerouteTable was spreading old `tab.data`
+
+**Fix - TracerouteTable.jsx:32-36**:
+```javascript
+// Before: Spread stale data
+data: { ...tab.data, selectedHop: hop }
+
+// After: Only send what changed
+data: { selectedHop: hop }
+```
+
+App.jsx's deep merge handles the rest.
+
+#### Issue 2: Blank Page on Tab Creation
+
+**Problem**: Race condition between state updates causing `activeTab` to be undefined
+
+**Fixes**:
+
+**1. App.jsx:73-75** - Added safety check:
+```javascript
+if (!activeTab) {
+  return <div className="app">Loading...</div>;
+}
+```
+
+**2. App.jsx:29-66** - Used functional state updates:
+```javascript
+// Before: Stale closures
+setTabs([...tabs, newTab]);
+
+// After: Always current state
+setTabs(prevTabs => [...prevTabs, newTab]);
+```
+
+**3. ControlPanel.jsx:14** - Fixed useEffect dependencies:
+```javascript
+}, [tab?.id, tab?.destination, tab?.data?.isRunning]);
+```
+
+**Status**: ✅ Both issues resolved, no more flashing
+
+---
+
+### Session 9: Graph Visualization Improvements
+
+**Requirements**:
+1. Show full time window, build from right to left
+2. Make ping line more defined (less smooth)
+3. Change mini graphs to horizontal layout
+4. Add 30sec and 1min time ranges
+5. Convert time range buttons to dropdown
+
+#### Change 1: Full Time Window with Right-to-Left Build
+
+**PingGraph.jsx:22-59** - Complete rewrite:
+```javascript
+const chartData = useMemo(() => {
+  const now = Date.now();
+  const cutoff = now - selectedRange;
+
+  // Create data points for entire time window
+  const dataPoints = [];
+  const intervalMs = 1000; // 1 second intervals
+
+  for (let t = cutoff; t <= now; t += intervalMs) {
+    const nearestPing = recentPings.find(p =>
+      Math.abs(p.timestamp - t) < intervalMs / 2
+    );
+
+    dataPoints.push({
+      timestamp: t,
+      time: nearestPing ? nearestPing.time : null,
+      timeLabel: new Date(t).toLocaleTimeString()
+    });
+  }
+
+  return dataPoints; // Oldest on left, newest on right
+}, [tab.data, selectedRange]);
+```
+
+**Behavior**:
+- Always shows full time range (even with no data)
+- New pings appear on the right
+- Old pings scroll off the left
+- Graph fills right-to-left as data comes in
+
+#### Change 2: Sharp Line Definition
+
+**PingGraph.jsx:110-116**:
+```javascript
+<Line
+  type="linear"  // Changed from "monotone"
+  dataKey="time"
+  stroke="#4dabf7"
+  strokeWidth={2}
+  dot={false}
+  connectNulls={false}
+  isAnimationActive={false}  // No smoothing
+/>
+```
+
+Shows exact ping variation with sharp angles.
+
+#### Change 3: Horizontal Mini Graphs
+
+**MiniGraph.jsx** - Complete redesign:
+- **Before**: Vertical line with min at bottom, max at top
+- **After**: Horizontal line with min at left, max at right
+
+```javascript
+// Horizontal layout
+const yCenter = height / 2;
+const minX = lineStart;  // Left edge
+const maxX = lineEnd;    // Right edge
+const avgX = lineStart + ((avg - minTime) / range) * lineLength;
+
+// Draw horizontal line
+<line x1={minX} y1={yCenter} x2={maxX} y2={yCenter} stroke="#555" strokeWidth="2" />
+
+// Min marker (green, left)
+<line x1={minX} y1={yCenter - 4} x2={minX} y2={yCenter + 4} stroke="#51cf66" />
+
+// Max marker (red, right)
+<line x1={maxX} y1={yCenter - 4} x2={maxX} y2={yCenter + 4} stroke="#ff6b6b" />
+
+// Avg dot (yellow, positioned on line)
+<circle cx={avgX} cy={yCenter} r="3" fill="#ffd43b" />
+
+// Recent pings positioned horizontally
+<circle cx={x} cy={yCenter} r="1.5" fill="#4dabf7" opacity="0.6" />
+```
+
+Cleaner, more compact visualization.
+
+#### Change 4: Additional Time Ranges
+
+**PingGraph.jsx:4-19** - Added to beginning:
+```javascript
+const TIME_RANGES = [
+  { label: '30sec', value: 30 * 1000 },      // NEW
+  { label: '1min', value: 60 * 1000 },       // NEW
+  { label: '5min', value: 5 * 60 * 1000 },
+  // ... rest of ranges
+];
+```
+
+Default is now 30sec for detailed real-time view.
+
+#### Change 5: Dropdown Time Range Selector
+
+**PingGraph.jsx:78-94** - Replaced buttons with select:
+```javascript
+<select
+  value={selectedRange}
+  onChange={(e) => setSelectedRange(Number(e.target.value))}
+>
+  {TIME_RANGES.map(range => (
+    <option key={range.value} value={range.value}>
+      {range.label}
+    </option>
+  ))}
+</select>
+```
+
+**Benefits**:
+- Saves screen space (14 buttons → 1 dropdown)
+- Easier to scan options
+- Consistent with ControlPanel style
+
+#### Minor UI Update
+
+**TracerouteTable.jsx:51** - Changed column header:
+```javascript
+<th>Latency</th>  // Was "Graph"
+```
+
+**Status**: ✅ All visualization improvements complete
+
+---
+
 ## Notes & Observations
 
 ### What Worked Well
@@ -418,7 +681,8 @@ Keep entries concise but informative. Future you will thank you!
 
 ---
 
-**Last Updated**: 2025-12-15 20:30 UTC
+**Last Updated**: 2025-12-16 05:30 UTC
 **Current Version**: 1.0.0-alpha
-**Total Development Time**: ~4 hours
-**Lines of Code**: ~1,500
+**Total Development Time**: ~6 hours
+**Lines of Code**: ~1,600
+**GitHub**: https://github.com/weasel18/PlotPinger

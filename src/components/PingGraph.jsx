@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const TIME_RANGES = [
+  { label: '30sec', value: 30 * 1000 },
+  { label: '1min', value: 60 * 1000 },
   { label: '5min', value: 5 * 60 * 1000 },
   { label: '10min', value: 10 * 60 * 1000 },
   { label: '30min', value: 30 * 60 * 1000 },
@@ -25,18 +27,37 @@ function PingGraph({ tab }) {
     const selectedHop = tab.data.selectedHop;
     const pings = selectedHop ? selectedHop.pings : tab.data.pings || [];
 
-    if (!pings || pings.length === 0) return [];
-
     const now = Date.now();
     const cutoff = now - selectedRange;
 
-    return pings
+    // Get pings within the time window
+    const recentPings = pings
       .filter(p => p.timestamp >= cutoff)
       .map(p => ({
         timestamp: p.timestamp,
         time: p.success ? p.time : null,
         timeLabel: new Date(p.timestamp).toLocaleTimeString()
       }));
+
+    // Create data points for the entire time window
+    // This ensures the graph always shows the full time range
+    const dataPoints = [];
+    const intervalMs = 1000; // 1 second intervals for smooth graph
+
+    for (let t = cutoff; t <= now; t += intervalMs) {
+      // Find if we have a ping near this time
+      const nearestPing = recentPings.find(p =>
+        Math.abs(p.timestamp - t) < intervalMs / 2
+      );
+
+      dataPoints.push({
+        timestamp: t,
+        time: nearestPing ? nearestPing.time : null,
+        timeLabel: new Date(t).toLocaleTimeString()
+      });
+    }
+
+    return dataPoints; // Oldest on left, newest on right
   }, [tab.data, selectedRange]);
 
   if (!tab.data) {
@@ -57,15 +78,18 @@ function PingGraph({ tab }) {
       <div className="graph-header">
         <div className="graph-title">{title}</div>
         <div className="time-range-selector">
-          {TIME_RANGES.map(range => (
-            <button
-              key={range.value}
-              className={`time-range-btn ${selectedRange === range.value ? 'active' : ''}`}
-              onClick={() => setSelectedRange(range.value)}
-            >
-              {range.label}
-            </button>
-          ))}
+          <label style={{ marginRight: '8px', fontSize: '12px' }}>Time Range:</label>
+          <select
+            value={selectedRange}
+            onChange={(e) => setSelectedRange(Number(e.target.value))}
+            style={{ padding: '4px 8px', fontSize: '12px' }}
+          >
+            {TIME_RANGES.map(range => (
+              <option key={range.value} value={range.value}>
+                {range.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -105,12 +129,13 @@ function PingGraph({ tab }) {
               labelFormatter={(label) => `Time: ${label}`}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="time"
               stroke="#4dabf7"
               strokeWidth={2}
               dot={false}
               connectNulls={false}
+              isAnimationActive={false}
             />
           </LineChart>
         </ResponsiveContainer>

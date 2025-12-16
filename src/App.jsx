@@ -27,30 +27,37 @@ function App() {
   }, []);
 
   const addTab = () => {
+    const newTabId = nextTabId;
     const newTab = {
-      id: nextTabId,
+      id: newTabId,
       title: 'New Target',
       destination: '',
       data: null
     };
-    setTabs([...tabs, newTab]);
-    setActiveTabId(nextTabId);
-    setNextTabId(nextTabId + 1);
+
+    // Use functional updates to ensure consistency
+    setTabs(prevTabs => [...prevTabs, newTab]);
+    setActiveTabId(newTabId);
+    setNextTabId(prevId => prevId + 1);
   };
 
   const closeTab = (tabId) => {
-    if (tabs.length === 1) return;
+    setTabs(prevTabs => {
+      if (prevTabs.length === 1) return prevTabs;
 
-    const newTabs = tabs.filter(t => t.id !== tabId);
-    setTabs(newTabs);
+      const newTabs = prevTabs.filter(t => t.id !== tabId);
 
-    if (activeTabId === tabId) {
-      setActiveTabId(newTabs[newTabs.length - 1].id);
-    }
+      // Update active tab if we're closing the active one
+      if (activeTabId === tabId) {
+        setActiveTabId(newTabs[newTabs.length - 1].id);
+      }
+
+      return newTabs;
+    });
   };
 
   const updateTab = (tabId, updates) => {
-    setTabs(tabs.map(t => {
+    setTabs(prevTabs => prevTabs.map(t => {
       if (t.id === tabId) {
         // Deep merge the data object if it exists in updates
         if (updates.data && t.data) {
@@ -69,6 +76,10 @@ function App() {
     setHistory(newHistory);
     localStorage.setItem('plotpinger-history', JSON.stringify(newHistory));
   };
+
+  if (!activeTab) {
+    return <div className="app">Loading...</div>;
+  }
 
   return (
     <div className="app">

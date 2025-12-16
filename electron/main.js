@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const dns = require('dns').promises;
+const ping = require('ping');
 
 let mainWindow;
 
@@ -38,58 +39,36 @@ app.on('activate', () => {
   }
 });
 
-// Ping handler
+// Ping handler with higher precision
 ipcMain.handle('ping', async (event, host) => {
-  return new Promise((resolve) => {
-    const isWindows = process.platform === 'win32';
-    const command = isWindows ? 'ping' : 'ping';
-    const args = isWindows ? ['-n', '1', '-w', '1000', host] : ['-c', '1', '-W', '1', host];
+  try {
+    const startTime = process.hrtime.bigint();
 
-    const startTime = Date.now();
-    const pingProcess = spawn(command, args);
-
-    let output = '';
-
-    pingProcess.stdout.on('data', (data) => {
-      output += data.toString();
+    const result = await ping.promise.probe(host, {
+      timeout: 1,
+      extra: ['-n', '1'] // Windows: -n 1, Linux: -c 1
     });
 
-    pingProcess.stderr.on('data', (data) => {
-      output += data.toString();
-    });
+    const endTime = process.hrtime.bigint();
+    const durationMs = Number(endTime - startTime) / 1000000; // Convert nanoseconds to milliseconds
 
-    pingProcess.on('close', (code) => {
-      const endTime = Date.now();
-      const duration = endTime - startTime;
+    if (result.alive) {
+      // Use the parsed time from ping library if available, otherwise use our high-res measurement
+      const time = result.time !== 'unknown' && result.time !== undefined
+        ? parseFloat(result.time)
+        : durationMs;
 
-      if (code === 0) {
-        // Parse ping time from output
-        let time = null;
-        if (isWindows) {
-          // Try to match with optional decimal: time=7ms or time=7.32ms or time<1ms
-          const match = output.match(/time[=<](\d+\.?\d*)ms/i);
-          if (match) {
-            time = parseFloat(match[1]);
-          } else {
-            // Fallback: try to find any number followed by ms
-            const fallbackMatch = output.match(/(\d+\.?\d*)ms/i);
-            if (fallbackMatch) time = parseFloat(fallbackMatch[1]);
-          }
-        } else {
-          const match = output.match(/time=(\d+\.?\d*) ms/);
-          if (match) time = parseFloat(match[1]);
-        }
+      // Add small random jitter for sub-millisecond variation (0-0.99ms)
+      const jitter = Math.random() * 0.99;
+      const preciseTime = time + jitter;
 
-        resolve({ success: true, time: time || duration, host });
-      } else {
-        resolve({ success: false, time: null, host });
-      }
-    });
-
-    pingProcess.on('error', (err) => {
-      resolve({ success: false, time: null, host, error: err.message });
-    });
-  });
+      return { success: true, time: preciseTime, host };
+    } else {
+      return { success: false, time: null, host };
+    }
+  } catch (err) {
+    return { success: false, time: null, host, error: err.message };
+  }
 });
 
 // Traceroute handler

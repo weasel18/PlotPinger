@@ -15,12 +15,15 @@ A network diagnostic tool built with Electron and React that provides real-time 
 
 #### Data Visualization
 - **Per-Hop Statistics**: Current, Average, Min, Max, and Packet Loss % for each hop
-- **Mini Graphs**: Inline visualization for each hop showing:
-  - Min-Max range indicator
-  - Average marker
-  - Recent ping history dots
-- **Main Graph**: Detailed time-series chart with multiple time ranges:
-  - 5min, 10min, 30min, 1hr, 2hr, 6hr, 12hr, 24hr, 48hr, 1wk, 2wk, 1mo
+- **Mini Graphs**: Horizontal inline visualization for each hop showing:
+  - Min (green, left) to Max (red, right) range line
+  - Average marker (yellow dot)
+  - Recent ping history dots positioned by latency
+- **Main Graph**: Detailed time-series chart with dropdown time range selector:
+  - 30sec, 1min, 5min, 10min, 30min, 1hr, 2hr, 6hr, 12hr, 24hr, 48hr, 1wk, 2wk, 1mo
+  - Full time window always visible
+  - Scrolling graph: newest pings on right, oldest scroll off left
+  - Sharp line definition (linear interpolation) for clear variation visibility
 - **Interactive**: Double-click any hop to view its detailed graph
 
 #### UI/UX Features

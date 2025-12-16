@@ -31,7 +31,6 @@ function TracerouteTable({ tab, onUpdateTab }) {
     // Update tab to show this hop in main graph
     onUpdateTab(tab.id, {
       data: {
-        ...tab.data,
         selectedHop: hop
       }
     });
@@ -49,7 +48,7 @@ function TracerouteTable({ tab, onUpdateTab }) {
           <th style={{ width: '80px' }}>Min</th>
           <th style={{ width: '80px' }}>Max</th>
           <th style={{ width: '80px' }}>Loss %</th>
-          <th style={{ width: '180px' }}>Graph</th>
+          <th style={{ width: '180px' }}>Latency</th>
         </tr>
       </thead>
       <tbody>

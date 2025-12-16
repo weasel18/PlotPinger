@@ -3,7 +3,7 @@ import React from 'react';
 function MiniGraph({ pings, min, max, avg }) {
   const width = 150;
   const height = 30;
-  const padding = 2;
+  const padding = 5;
 
   if (!pings || pings.length === 0) {
     return null;
@@ -23,67 +23,72 @@ function MiniGraph({ pings, min, max, avg }) {
   const maxTime = max > 0 ? max : minTime + 1;
   const range = maxTime - minTime || 1;
 
-  // Calculate positions
-  const minY = height - padding - ((minTime - minTime) / range) * (height - 2 * padding);
-  const maxY = height - padding - ((maxTime - minTime) / range) * (height - 2 * padding);
-  const avgY = height - padding - ((avg - minTime) / range) * (height - 2 * padding);
+  // Calculate horizontal positions
+  const yCenter = height / 2;
+  const lineStart = padding;
+  const lineEnd = width - padding;
+  const lineLength = lineEnd - lineStart;
+
+  // Position for min (left), max (right), avg (proportional)
+  const minX = lineStart;
+  const maxX = lineEnd;
+  const avgX = lineStart + ((avg - minTime) / range) * lineLength;
 
   return (
     <svg width={width} height={height} style={{ display: 'block' }}>
       {/* Background */}
       <rect x="0" y="0" width={width} height={height} fill="#1e1e1e" />
 
-      {/* Min-Max line */}
+      {/* Min-Max horizontal line */}
       <line
-        x1={width / 2}
-        y1={maxY}
-        x2={width / 2}
-        y2={minY}
+        x1={minX}
+        y1={yCenter}
+        x2={maxX}
+        y2={yCenter}
         stroke="#555"
         strokeWidth="2"
       />
 
-      {/* Min marker */}
+      {/* Min marker (left) */}
       <line
-        x1={width / 2 - 4}
-        y1={minY}
-        x2={width / 2 + 4}
-        y2={minY}
+        x1={minX}
+        y1={yCenter - 4}
+        x2={minX}
+        y2={yCenter + 4}
         stroke="#51cf66"
-        strokeWidth="1"
+        strokeWidth="2"
       />
 
-      {/* Max marker */}
+      {/* Max marker (right) */}
       <line
-        x1={width / 2 - 4}
-        y1={maxY}
-        x2={width / 2 + 4}
-        y2={maxY}
+        x1={maxX}
+        y1={yCenter - 4}
+        x2={maxX}
+        y2={yCenter + 4}
         stroke="#ff6b6b"
-        strokeWidth="1"
+        strokeWidth="2"
       />
 
       {/* Avg dot */}
       <circle
-        cx={width / 2}
-        cy={avgY}
+        cx={avgX}
+        cy={yCenter}
         r="3"
         fill="#ffd43b"
       />
 
-      {/* Recent ping dots */}
+      {/* Recent ping dots along the line */}
       {pings.slice(-20).map((ping, index) => {
         if (!ping.success || ping.time === null) return null;
 
-        const x = (index / 20) * width;
-        const y = height - padding - ((ping.time - minTime) / range) * (height - 2 * padding);
+        const x = lineStart + ((ping.time - minTime) / range) * lineLength;
 
         return (
           <circle
             key={index}
             cx={x}
-            cy={y}
-            r="1"
+            cy={yCenter}
+            r="1.5"
             fill="#4dabf7"
             opacity="0.6"
           />
