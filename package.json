@@ -1,0 +1,50 @@
+{
+  "name": "plotpinger",
+  "version": "1.0.0",
+  "description": "Network diagnostic tool with traceroute and ping visualization",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "build": "vite build",
+    "build:electron": "electron-builder",
+    "preview": "vite preview"
+  },
+  "keywords": ["ping", "traceroute", "network", "diagnostic"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^2.10.3",
+    "react-resizable-panels": "^1.0.9"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.plotpinger.app",
+    "productName": "PlotPinger",
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
