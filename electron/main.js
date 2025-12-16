@@ -45,7 +45,7 @@ ipcMain.handle('ping', async (event, host) => {
     const startTime = process.hrtime.bigint();
 
     const result = await ping.promise.probe(host, {
-      timeout: 5, // Increased from 1 to 5 seconds for VPN connections
+      timeout: 2, // 2 seconds - reasonable buffer for VPN latency
       extra: ['-n', '1'] // Windows: -n 1, Linux: -c 1
     });
 
@@ -76,23 +76,23 @@ ipcMain.handle('traceroute', async (event, host) => {
   return new Promise((resolve) => {
     const isWindows = process.platform === 'win32';
     const command = isWindows ? 'tracert' : 'traceroute';
-    // Increased timeouts: Windows -w 5000ms (5s), Linux -w 5 (5s) for VPN connections
-    const args = isWindows ? ['-d', '-h', '30', '-w', '5000', host] : ['-n', '-m', '30', '-w', '5', host];
+    // 2 second timeout per hop - reasonable buffer for VPN latency
+    const args = isWindows ? ['-d', '-h', '30', '-w', '2000', host] : ['-n', '-m', '30', '-w', '2', host];
 
     const tracerouteProcess = spawn(command, args);
 
     let output = '';
     let hasResolved = false;
 
-    // Overall timeout - 3 minutes max (30 hops × 5 seconds + buffer)
+    // Overall timeout - 90 seconds max (30 hops × 2 seconds + buffer)
     const overallTimeout = setTimeout(() => {
       if (!hasResolved) {
-        console.log('Traceroute timed out after 3 minutes');
+        console.log('Traceroute timed out after 90 seconds');
         hasResolved = true;
         tracerouteProcess.kill();
-        resolve({ success: false, error: 'Timeout after 3 minutes', output, host });
+        resolve({ success: false, error: 'Timeout after 90 seconds', output, host });
       }
-    }, 180000);
+    }, 90000);
 
     tracerouteProcess.stdout.on('data', (data) => {
       output += data.toString();
