@@ -32,9 +32,12 @@ A network diagnostic tool built with Electron and React that provides real-time 
 - **Dark Theme**: Professional dark UI optimized for long monitoring sessions
 - **High Precision**: Displays times to 2 decimal places (e.g., 7.32ms)
 
-#### Data Persistence
+#### Data Persistence & Route Monitoring
 - **Session Continuity**: Stop/restart monitoring without losing historical data
+- **Automatic Route Updates**: Traceroute re-runs every 5 minutes to detect path changes
 - **Route Change Detection**: Automatically detects and logs when network routes change
+- **Visual Route History**: Graph markers (⚠️) show when routes changed with clickable details
+- **Before/After Comparison**: Modal displays side-by-side old vs new route when marker clicked
 - **Dynamic Hop Management**: Removes old hops and preserves data for persistent ones
 
 ### Technical Architecture
@@ -89,7 +92,8 @@ A network diagnostic tool built with Electron and React that provides real-time 
 ## End Goals / Roadmap
 
 ### Phase 1: Enhanced Monitoring (Priority)
-- [ ] **Continuous Traceroute**: Re-run traceroute periodically (every 5-10 min) to detect route changes
+- [x] **Continuous Traceroute**: Re-run traceroute periodically (every 5 min) to detect route changes ✅
+- [x] **Route Change Visualization**: Graph markers showing when routes changed with before/after details ✅
 - [ ] **Alert System**: Notifications for packet loss > threshold, route changes, high latency
 - [ ] **Jitter Calculation**: Track ping variance over time
 - [ ] **Performance Metrics**: Track route stability score

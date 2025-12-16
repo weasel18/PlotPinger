@@ -75,34 +75,10 @@ async function resolveHostnames(hops) {
   return resolvedHops;
 }
 
-// Start monitoring a target
-export async function startMonitoring(tabId, destination, interval, onUpdate) {
-  // Check if there's an existing session
-  const existingSession = sessions.get(tabId);
-  const existingPings = existingSession?.pings || [];
-  const existingHopPings = existingSession?.hopPings || new Map();
-  const existingHops = existingSession?.hops || [];
-
-  // Stop any active monitoring but keep the data
-  if (existingSession?.intervalId) {
-    clearInterval(existingSession.intervalId);
-  }
-
-  const session = {
-    destination,
-    interval,
-    isRunning: true,
-    intervalId: null,
-    hops: [],
-    pings: existingPings, // Preserve existing ping data
-    hopPings: existingHopPings // Preserve hop ping data
-  };
-
-  sessions.set(tabId, session);
-
-  // Run initial traceroute
+// Run traceroute and update hops
+async function runTraceroute(session, destination, existingHops, onUpdate) {
   try {
-    console.log('Starting traceroute for:', destination);
+    console.log('Running traceroute for:', destination);
     const result = await window.electronAPI.traceroute(destination);
     console.log('Traceroute result:', result);
 
@@ -115,16 +91,24 @@ export async function startMonitoring(tabId, destination, interval, onUpdate) {
 
       // Check if traceroute changed
       if (hasTracerouteChanged(existingHops, resolvedHops)) {
+        const timestamp = Date.now();
         console.log('⚠️ TRACEROUTE CHANGED!');
         console.log('Old route:', existingHops.map(h => `${h.hop}: ${h.ip}`).join(' -> '));
         console.log('New route:', resolvedHops.map(h => `${h.hop}: ${h.ip}`).join(' -> '));
+
+        // Store route change event
+        session.routeChanges.push({
+          timestamp,
+          oldHops: existingHops.map(h => ({ hop: h.hop, ip: h.ip, hostname: h.hostname })),
+          newHops: resolvedHops.map(h => ({ hop: h.hop, ip: h.ip, hostname: h.hostname }))
+        });
       }
 
       // Map new hops and preserve existing ping data where possible
       session.hops = resolvedHops.map(hop => {
         // Check if this hop existed before (same hop number and IP)
         const existingHop = existingHops.find(h => h.hop === hop.hop && h.ip === hop.ip);
-        const existingPingData = existingHopPings.get(hop.hop);
+        const existingPingData = session.hopPings.get(hop.hop);
 
         // If hop existed and IP is the same, preserve its ping data
         if (existingHop && existingPingData) {
@@ -142,7 +126,7 @@ export async function startMonitoring(tabId, destination, interval, onUpdate) {
           };
         }
 
-        // New hop, start fresh
+        // New hop or IP changed, start fresh
         return {
           ...hop,
           current: null,
@@ -167,17 +151,11 @@ export async function startMonitoring(tabId, destination, interval, onUpdate) {
         traceroute: {
           hops: session.hops,
           loading: false
-        }
+        },
+        routeChanges: session.routeChanges
       });
-    } else {
-      console.error('Traceroute failed:', result.error);
-      onUpdate({
-        traceroute: {
-          hops: [],
-          loading: false,
-          error: result.error || 'Traceroute failed'
-        }
-      });
+
+      return true;
     }
   } catch (err) {
     console.error('Traceroute exception:', err);
@@ -189,6 +167,45 @@ export async function startMonitoring(tabId, destination, interval, onUpdate) {
       }
     });
   }
+  return false;
+}
+
+// Start monitoring a target
+export async function startMonitoring(tabId, destination, interval, onUpdate) {
+  // Check if there's an existing session
+  const existingSession = sessions.get(tabId);
+  const existingPings = existingSession?.pings || [];
+  const existingHopPings = existingSession?.hopPings || new Map();
+  const existingHops = existingSession?.hops || [];
+
+  // Stop any active monitoring but keep the data
+  if (existingSession?.intervalId) {
+    clearInterval(existingSession.intervalId);
+  }
+
+  const session = {
+    destination,
+    interval,
+    isRunning: true,
+    intervalId: null,
+    tracerouteIntervalId: null,
+    hops: [],
+    pings: existingPings, // Preserve existing ping data
+    hopPings: existingHopPings, // Preserve hop ping data
+    routeChanges: [] // Track route change events
+  };
+
+  sessions.set(tabId, session);
+
+  // Run initial traceroute
+  await runTraceroute(session, destination, existingHops, onUpdate);
+
+  // Set up periodic traceroute (every 5 minutes)
+  session.tracerouteIntervalId = setInterval(async () => {
+    if (session.isRunning) {
+      await runTraceroute(session, destination, session.hops, onUpdate);
+    }
+  }, 5 * 60 * 1000); // 5 minutes
 
   // Start pinging
   const doPing = async () => {
@@ -285,6 +302,10 @@ export function stopMonitoring(tabId) {
     if (session.intervalId) {
       clearInterval(session.intervalId);
       session.intervalId = null;
+    }
+    if (session.tracerouteIntervalId) {
+      clearInterval(session.tracerouteIntervalId);
+      session.tracerouteIntervalId = null;
     }
     // Keep session data but mark as stopped - don't delete
     console.log('Stopped monitoring for tab:', tabId);

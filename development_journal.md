@@ -614,6 +614,252 @@ Default is now 30sec for detailed real-time view.
 
 ---
 
+### Session 10: Automatic Route Change Detection & Visualization
+
+**Requirements**:
+1. Automatically detect when network routes change (e.g., VPN, ISP changes)
+2. Re-run traceroute periodically to catch route changes
+3. Add visual markers on graph showing when changes occurred
+4. Create clickable markers to show before/after route comparison
+
+#### Implementation
+
+**Feature 1: Periodic Traceroute Updates**
+
+**networkService.js:203-208** - Added automatic traceroute interval:
+```javascript
+// Run initial traceroute
+await runTraceroute(session, destination, existingHops, onUpdate);
+
+// Set up periodic traceroute (every 5 minutes)
+session.tracerouteIntervalId = setInterval(async () => {
+  if (session.isRunning) {
+    await runTraceroute(session, destination, session.hops, onUpdate);
+  }
+}, 5 * 60 * 1000); // 5 minutes
+```
+
+**Session Object Update** - Added `routeChanges` array:
+```javascript
+const session = {
+  destination,
+  interval,
+  isRunning: true,
+  intervalId: null,
+  tracerouteIntervalId: null,  // NEW: For periodic traceroute
+  hops: [],
+  pings: existingPings,
+  hopPings: existingHopPings,
+  routeChanges: []  // NEW: Track route change events
+};
+```
+
+**Feature 2: Route Change Detection & Logging**
+
+**networkService.js:92-105** - Added change detection in `runTraceroute()`:
+```javascript
+// Check if traceroute changed
+if (hasTracerouteChanged(existingHops, resolvedHops)) {
+  const timestamp = Date.now();
+  console.log('⚠️ TRACEROUTE CHANGED!');
+  console.log('Old route:', existingHops.map(h => `${h.hop}: ${h.ip}`).join(' -> '));
+  console.log('New route:', resolvedHops.map(h => `${h.hop}: ${h.ip}`).join(' -> '));
+
+  // Store route change event
+  session.routeChanges.push({
+    timestamp,
+    oldHops: existingHops.map(h => ({ hop: h.hop, ip: h.ip, hostname: h.hostname })),
+    newHops: resolvedHops.map(h => ({ hop: h.hop, ip: h.ip, hostname: h.hostname }))
+  });
+}
+```
+
+**networkService.js:283-295** - `hasTracerouteChanged()` function:
+```javascript
+function hasTracerouteChanged(oldHops, newHops) {
+  if (!oldHops || oldHops.length === 0) return false;
+  if (oldHops.length !== newHops.length) return true;
+
+  for (let i = 0; i < oldHops.length; i++) {
+    if (oldHops[i].hop !== newHops[i].hop || oldHops[i].ip !== newHops[i].ip) {
+      return true;
+    }
+  }
+
+  return false;
+}
+```
+
+**Updated `onUpdate()` call** to include route changes:
+```javascript
+onUpdate({
+  traceroute: {
+    hops: session.hops,
+    loading: false
+  },
+  routeChanges: session.routeChanges  // NEW: Send to UI
+});
+```
+
+**Updated `stopMonitoring()`** - Clear traceroute interval:
+```javascript
+if (session.tracerouteIntervalId) {
+  clearInterval(session.tracerouteIntervalId);
+  session.tracerouteIntervalId = null;
+}
+```
+
+**Feature 3: Visual Route Change Markers**
+
+**PingGraph.jsx:2** - Added import:
+```javascript
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+```
+
+**PingGraph.jsx:23** - Added state for modal:
+```javascript
+const [selectedRouteChange, setSelectedRouteChange] = useState(null);
+```
+
+**PingGraph.jsx:64-72** - Filter route changes to visible time window:
+```javascript
+const routeChanges = useMemo(() => {
+  if (!tab.data?.routeChanges) return [];
+
+  const now = Date.now();
+  const cutoff = now - selectedRange;
+
+  return tab.data.routeChanges.filter(change => change.timestamp >= cutoff);
+}, [tab.data?.routeChanges, selectedRange]);
+```
+
+**PingGraph.jsx:153-177** - Added route change markers in chart:
+```javascript
+{/* Route change markers */}
+{routeChanges.map((change, index) => {
+  const dataPoint = chartData.find(d =>
+    Math.abs(d.timestamp - change.timestamp) < 1000
+  );
+  if (!dataPoint) return null;
+
+  return (
+    <ReferenceLine
+      key={index}
+      x={dataPoint.timeLabel}
+      stroke="#ff6b6b"
+      strokeWidth={2}
+      strokeDasharray="5 5"
+      label={{
+        value: '⚠',
+        position: 'top',
+        fill: '#ff6b6b',
+        fontSize: 16,
+        cursor: 'pointer',
+        onClick: () => setSelectedRouteChange(change)
+      }}
+    />
+  );
+})}
+```
+
+**Feature 4: Route Change Details Modal**
+
+**PingGraph.jsx:181-239** - Added modal with side-by-side comparison:
+```javascript
+{/* Route Change Modal */}
+{selectedRouteChange && (
+  <div style={{
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    backgroundColor: '#252526',
+    border: '2px solid #ff6b6b',
+    borderRadius: '8px',
+    padding: '20px',
+    maxWidth: '600px',
+    maxHeight: '80%',
+    overflow: 'auto',
+    zIndex: 1000
+  }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <h3 style={{ color: '#ff6b6b' }}>⚠️ Route Changed</h3>
+      <button onClick={() => setSelectedRouteChange(null)}>×</button>
+    </div>
+
+    <div style={{ fontSize: '12px', color: '#888' }}>
+      {new Date(selectedRouteChange.timestamp).toLocaleString()}
+    </div>
+
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      <div>
+        <h4 style={{ color: '#ff6b6b' }}>Old Route:</h4>
+        {selectedRouteChange.oldHops.map(hop => (
+          <div key={hop.hop}>
+            <strong>Hop {hop.hop}:</strong> {hop.ip}
+            {hop.hostname && <div style={{ color: '#888' }}>{hop.hostname}</div>}
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <h4 style={{ color: '#51cf66' }}>New Route:</h4>
+        {selectedRouteChange.newHops.map(hop => (
+          <div key={hop.hop}>
+            <strong>Hop {hop.hop}:</strong> {hop.ip}
+            {hop.hostname && <div style={{ color: '#888' }}>{hop.hostname}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Backdrop for modal */}
+{selectedRouteChange && (
+  <div
+    onClick={() => setSelectedRouteChange(null)}
+    style={{
+      position: 'absolute',
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      zIndex: 999
+    }}
+  />
+)}
+```
+
+#### How It Works
+
+1. **Initial traceroute** runs when monitoring starts
+2. **Every 5 minutes**, traceroute runs again automatically
+3. **Comparison** between old and new routes detects changes
+4. **If changed**, stores timestamp + before/after route details
+5. **Graph displays** red dashed vertical line with ⚠️ warning icon
+6. **Click warning icon** to see modal with full route comparison
+7. **Modal shows**:
+   - Exact time of change
+   - Side-by-side old vs new route
+   - Hop numbers, IPs, and hostnames for each
+
+#### Use Cases
+
+- **VPN Connection**: Detects when VPN connects/disconnects
+- **ISP Routing**: Catches when ISP changes route to destination
+- **Network Failover**: Shows when traffic switches to backup path
+- **Troubleshooting**: Visual history of when routing changed
+
+#### Benefits
+
+- No manual intervention needed
+- Complete history of route changes
+- Easy to correlate routing changes with latency spikes
+- Helps identify unstable network paths
+
+**Status**: ✅ Automatic route change detection fully implemented
+
+---
+
 ## Notes & Observations
 
 ### What Worked Well
@@ -648,9 +894,10 @@ Default is now 30sec for detailed real-time view.
 
 ### Immediate Priorities
 1. [ ] Test on Linux system
-2. [ ] Add continuous traceroute (re-run every 5 minutes)
-3. [ ] Implement alert system for packet loss
-4. [ ] Add export to CSV functionality
+2. [x] Add continuous traceroute (re-run every 5 minutes) ✅
+3. [x] Visual route change markers with before/after comparison ✅
+4. [ ] Implement alert system for packet loss
+5. [ ] Add export to CSV functionality
 
 ### Medium-term Goals
 1. [ ] Optimize DNS resolution (cache results)
@@ -681,8 +928,8 @@ Keep entries concise but informative. Future you will thank you!
 
 ---
 
-**Last Updated**: 2025-12-16 05:30 UTC
+**Last Updated**: 2025-12-15
 **Current Version**: 1.0.0-alpha
-**Total Development Time**: ~6 hours
-**Lines of Code**: ~1,600
+**Total Development Time**: ~7 hours
+**Lines of Code**: ~1,750
 **GitHub**: https://github.com/weasel18/PlotPinger
