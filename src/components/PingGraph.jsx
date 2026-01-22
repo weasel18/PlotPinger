@@ -31,7 +31,8 @@ function PingGraph({ tab }) {
     const now = Date.now();
     const cutoff = now - selectedRange;
 
-    // Get pings within the time window
+    // Get pings within the time window and map them directly
+    // This ensures we show ALL pings, not just ones that align with a 1-second grid
     const recentPings = pings
       .filter(p => p.timestamp >= cutoff)
       .map(p => ({
@@ -40,23 +41,25 @@ function PingGraph({ tab }) {
         timeLabel: new Date(p.timestamp).toLocaleTimeString()
       }));
 
-    // Create data points for the entire time window
-    // This ensures the graph always shows the full time range
+    // Always add sentinel points at start and end to show full time range
     const dataPoints = [];
-    const intervalMs = 1000; // 1 second intervals for smooth graph
 
-    for (let t = cutoff; t <= now; t += intervalMs) {
-      // Find if we have a ping near this time
-      const nearestPing = recentPings.find(p =>
-        Math.abs(p.timestamp - t) < intervalMs / 2
-      );
+    // Always add point at start of time range
+    dataPoints.push({
+      timestamp: cutoff,
+      time: null,
+      timeLabel: new Date(cutoff).toLocaleTimeString()
+    });
 
-      dataPoints.push({
-        timestamp: t,
-        time: nearestPing ? nearestPing.time : null,
-        timeLabel: new Date(t).toLocaleTimeString()
-      });
-    }
+    // Add all actual ping data
+    dataPoints.push(...recentPings);
+
+    // Always add point at end of time range
+    dataPoints.push({
+      timestamp: now,
+      time: null,
+      timeLabel: new Date(now).toLocaleTimeString()
+    });
 
     return dataPoints; // Oldest on left, newest on right
   }, [tab.data, selectedRange]);
@@ -168,8 +171,9 @@ function PingGraph({ tab }) {
                       value: '⚠',
                       position: 'top',
                       fill: '#ff6b6b',
-                      fontSize: 16,
+                      fontSize: 24,
                       cursor: 'pointer',
+                      style: { fontWeight: 'bold' },
                       onClick: () => setSelectedRouteChange(change)
                     }}
                   />
